@@ -960,7 +960,7 @@ type RecoveryStatus struct {
 	Verdict       string                `json:"verdict"` // SAFE_TO_NUKE, NEEDS_RECOVERY, or NEEDS_MQ_SUBMIT
 	Branch        string                `json:"branch,omitempty"`
 	Issue         string                `json:"issue,omitempty"`
-	MQStatus      string                `json:"mq_status,omitempty"` // "submitted", "not_submitted", "unknown"
+	MQStatus      string                `json:"mq_status,omitempty"` // "submitted", "not_submitted", "not_required", "unknown"
 }
 
 func runPolecatCheckRecovery(cmd *cobra.Command, args []string) error {
@@ -1046,7 +1046,9 @@ func runPolecatCheckRecovery(cmd *cobra.Command, args []string) error {
 	if status.Verdict == "SAFE_TO_NUKE" && status.Branch != "" {
 		mqBd := beads.New(r.Path)
 		beadTerminal := isAssignedBeadTerminal(mqBd, status.Issue)
-		applyMQCheck(&status, mqBd, beadTerminal)
+		gitState, gitErr := getGitState(p.ClonePath)
+		hasSubmittableWork := gitErr != nil || gitState.UnpushedCommits > 0
+		applyMQCheck(&status, mqBd, beadTerminal, hasSubmittableWork)
 	}
 
 	// JSON output
@@ -1119,10 +1121,17 @@ func isAssignedBeadTerminal(bd *beads.Beads, issueID string) bool {
 // This guard fixes the zombie-restart loop documented in bead aa-55d8:
 // a closed "no-op audit" bead (e.g. aa-xtee) used to report NEEDS_MQ_SUBMIT
 // forever, causing witness patrols to restart the polecat on every cycle.
-func applyMQCheck(status *RecoveryStatus, bd mrFinder, beadTerminal bool) {
+func applyMQCheck(status *RecoveryStatus, bd mrFinder, beadTerminal, hasSubmittableWork bool) {
 	if beadTerminal {
 		// Nothing to submit — the bead is already terminal.
 		status.MQStatus = "submitted"
+		return
+	}
+	if !hasSubmittableWork {
+		// No commits/content ahead of the integration branch means gt done had
+		// nothing to enqueue; treating that as missing MQ submission causes
+		// recovery loops on no-op/report-only assignments.
+		status.MQStatus = "not_required"
 		return
 	}
 	mr, mrErr := bd.FindMRForBranchAny(status.Branch)
