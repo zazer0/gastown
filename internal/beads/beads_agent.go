@@ -50,13 +50,13 @@ type AgentFields struct {
 	// Completion metadata fields (gt-x7t9).
 	// Written by gt done, read by witness survey-workers to discover
 	// completion state from beads instead of POLECAT_DONE mail.
-	ExitType       string // COMPLETED, ESCALATED, DEFERRED, PHASE_COMPLETE (see witness.ExitType*)
-	MRID           string // MR bead ID (if MR was created)
-	Branch         string // Polecat working branch name
+	ExitType        string // COMPLETED, ESCALATED, DEFERRED, PHASE_COMPLETE (see witness.ExitType*)
+	MRID            string // MR bead ID (if MR was created)
+	Branch          string // Polecat working branch name
 	LastSourceIssue string // Last source/work bead ID, preserved after hook_bead is cleared
-	MRFailed       bool   // True when MR creation was attempted but failed
-	PushFailed     bool   // True when branch push to origin failed (gas-556)
-	CompletionTime string // RFC3339 timestamp of when gt done was called
+	MRFailed        bool   // True when MR creation was attempted but failed
+	PushFailed      bool   // True when branch push to origin failed (gas-556)
+	CompletionTime  string // RFC3339 timestamp of when gt done was called
 }
 
 // Notification level constants
@@ -419,13 +419,13 @@ type AgentFieldUpdates struct {
 	Mode              *string
 	HookBead          *string // Clear hook_bead on completion (gt-qbh)
 	// Completion metadata fields (gt-x7t9)
-	ExitType       *string
-	MRID           *string
-	Branch         *string
+	ExitType        *string
+	MRID            *string
+	Branch          *string
 	LastSourceIssue *string
-	MRFailed       *bool
-	PushFailed     *bool // True when branch push to origin failed (gas-556)
-	CompletionTime *string
+	MRFailed        *bool
+	PushFailed      *bool // True when branch push to origin failed (gas-556)
+	CompletionTime  *string
 }
 
 // UpdateAgentDescriptionFields atomically updates one or more agent description
@@ -547,13 +547,13 @@ func (b *Beads) UpdateAgentCompletion(id string, meta *CompletionMetadata) error
 	mrFailed := meta.MRFailed
 	pushFailed := meta.PushFailed
 	return b.UpdateAgentDescriptionFields(id, AgentFieldUpdates{
-		ExitType:       &meta.ExitType,
-		MRID:           &meta.MRID,
-		Branch:         &meta.Branch,
+		ExitType:        &meta.ExitType,
+		MRID:            &meta.MRID,
+		Branch:          &meta.Branch,
 		LastSourceIssue: &meta.HookBead,
-		MRFailed:       &mrFailed,
-		PushFailed:     &pushFailed,
-		CompletionTime: &meta.CompletionTime,
+		MRFailed:        &mrFailed,
+		PushFailed:      &pushFailed,
+		CompletionTime:  &meta.CompletionTime,
 	})
 }
 
@@ -563,13 +563,13 @@ func (b *Beads) ClearAgentCompletion(id string) error {
 	empty := ""
 	notFailed := false
 	return b.UpdateAgentDescriptionFields(id, AgentFieldUpdates{
-		ExitType:       &empty,
-		MRID:           &empty,
-		Branch:         &empty,
+		ExitType:        &empty,
+		MRID:            &empty,
+		Branch:          &empty,
 		LastSourceIssue: &empty,
-		MRFailed:       &notFailed,
-		PushFailed:     &notFailed,
-		CompletionTime: &empty,
+		MRFailed:        &notFailed,
+		PushFailed:      &notFailed,
+		CompletionTime:  &empty,
 	})
 }
 

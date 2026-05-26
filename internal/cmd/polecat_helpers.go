@@ -275,7 +275,7 @@ func displayDryRunSafetyCheck(target polecatTarget) bool {
 		}
 
 		if fields.ActiveMR != "" {
-			if blocker := activeMRBlocker(bd, fields.ActiveMR); blocker != "" {
+			if blocker := activeMRBlocker(bd, fields.ActiveMR, agentSourceIssueHint("", fields), false, false); blocker != "" {
 				fmt.Printf("    - Active MR: %s (%s)\n", style.Error.Render("blocked"), blocker)
 			} else {
 				fmt.Printf("    - Active MR: %s (%s)\n", style.Success.Render("terminal"), fields.ActiveMR)

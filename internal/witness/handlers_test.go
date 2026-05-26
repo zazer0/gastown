@@ -480,6 +480,116 @@ func fakeBd() (*BdCli, *mockBdCalls) {
 	)
 }
 
+func TestHasPendingMRFromSnapshotAssessesMRStatus(t *testing.T) {
+	issueJSON := func(id, status, desc string) string {
+		b, err := json.Marshal([]map[string]any{{"id": id, "status": status, "description": desc}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	tests := []struct {
+		name string
+		show func(id string) (string, error)
+		want bool
+	}{
+		{
+			name: "open MR is pending",
+			show: func(id string) (string, error) {
+				return issueJSON(id, "open", ""), nil
+			},
+			want: true,
+		},
+		{
+			name: "closed MR with terminal source is not pending",
+			show: func(id string) (string, error) {
+				if id == "gt-mr" {
+					return issueJSON(id, "closed", ""), nil
+				}
+				return issueJSON(id, "closed", ""), nil
+			},
+		},
+		{
+			name: "missing MR with terminal source is not pending",
+			show: func(id string) (string, error) {
+				if id == "gt-mr" {
+					return "", errors.New("not found")
+				}
+				return issueJSON(id, "closed", ""), nil
+			},
+		},
+		{
+			name: "lookup error is pending",
+			show: func(id string) (string, error) { return "", errors.New("bd exploded") },
+			want: true,
+		},
+		{
+			name: "closed MR with open source is pending",
+			show: func(id string) (string, error) {
+				if id == "gt-mr" {
+					return issueJSON(id, "closed", ""), nil
+				}
+				return issueJSON(id, "open", ""), nil
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bd, _ := mockBd(
+				func(args []string) (string, error) {
+					if len(args) == 0 {
+						return "", nil
+					}
+					switch args[0] {
+					case "list":
+						return "[]", nil
+					case "show":
+						return tt.show(args[1])
+					}
+					return "", nil
+				},
+				func(args []string) error { return nil },
+			)
+			snap := &agentBeadSnapshot{ActiveMR: "gt-mr", Fields: &beads.AgentFields{ActiveMR: "gt-mr", LastSourceIssue: "gt-src"}}
+			if got := hasPendingMRFromSnapshot(bd, t.TempDir(), "nux", snap); got != tt.want {
+				t.Fatalf("hasPendingMRFromSnapshot() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasPendingMRUsesAgentLastSourceIssue(t *testing.T) {
+	bd, _ := mockBd(
+		func(args []string) (string, error) {
+			if len(args) == 0 {
+				return "", nil
+			}
+			switch args[0] {
+			case "list":
+				return "[]", nil
+			case "show":
+				switch args[1] {
+				case "gt-agent":
+					return `[{"active_mr":"gt-mr","description":"active_mr: gt-mr\nlast_source_issue: gt-src\n"}]`, nil
+				case "gt-mr":
+					return "", errors.New("not found")
+				case "gt-src":
+					return `[{"id":"gt-src","status":"closed"}]`, nil
+				}
+			}
+			return "", errors.New("not found")
+		},
+		func(args []string) error { return nil },
+	)
+
+	if got := hasPendingMR(bd, t.TempDir(), "gastown", "nux", "gt-agent"); got {
+		t.Fatalf("hasPendingMR() = true, want false for missing MR with terminal source")
+	}
+}
+
 func TestFindCleanupWisp_UsesCorrectBdListFlags(t *testing.T) {
 	t.Parallel()
 	bd, mock := fakeBd()

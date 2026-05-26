@@ -20,6 +20,7 @@ func TestDecideSlotReuse(t *testing.T) {
 		{name: "stash", mutate: func(in *SlotReuseInput) { in.StashCount = 1 }, want: "git-stash"},
 		{name: "unpushed", mutate: func(in *SlotReuseInput) { in.UnpushedCommits = 1 }, want: "git-unpushed"},
 		{name: "git failed", mutate: func(in *SlotReuseInput) { in.GitCheckFailed = true }, want: "git-check-failed"},
+		{name: "active MR pending", mutate: func(in *SlotReuseInput) { in.ActiveMRPending = true; in.ActiveMRReason = "active_mr=gt-mr status=open" }, want: "active_mr=gt-mr status=open"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

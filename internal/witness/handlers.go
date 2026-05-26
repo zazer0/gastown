@@ -869,7 +869,7 @@ func slotOpenDecision(workDir, townRoot, rigName, polecatName, exitType string) 
 		if sourceHint == "" {
 			sourceHint = fields.HookBead
 		}
-		assessment := polecat.AssessActiveMR(beadCLIShower{bd: DefaultBdCli(), workDir: workDir}, polecat.ActiveMRInput{ActiveMR: fields.ActiveMR, SourceIssueHint: sourceHint, RequireGitSafe: true, GitSafe: gitSafe})
+		assessment := polecat.AssessActiveMR(beads.New(beads.ResolveBeadsDir(workDir)), polecat.ActiveMRInput{ActiveMR: fields.ActiveMR, SourceIssueHint: sourceHint, RequireGitSafe: true, GitSafe: gitSafe})
 		if assessment.Pending {
 			input.ActiveMRPending = true
 			input.ActiveMRReason = assessment.Reason
@@ -3137,6 +3137,9 @@ func hasPendingMRFromSnapshot(bd *BdCli, workDir, polecatName string, snap *agen
 
 // getAgentMRContext retrieves active_mr and durable source context from an agent bead.
 func getAgentMRContext(bd *BdCli, workDir, agentBeadID string) (string, string) {
+	if bd == nil || bd.Exec == nil {
+		return "", ""
+	}
 	output, err := bd.Exec(workDir, "show", agentBeadID, "--json")
 	if err != nil || output == "" {
 		return "", ""

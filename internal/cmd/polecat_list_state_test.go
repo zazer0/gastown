@@ -17,6 +17,22 @@ func (f fakeReuseMRShower) Show(issueID string) (*beads.Issue, error) {
 	return f.issue, f.err
 }
 
+type fakeReuseMapShower struct {
+	issues map[string]*beads.Issue
+	errs   map[string]error
+}
+
+func (f fakeReuseMapShower) Show(issueID string) (*beads.Issue, error) {
+	if err := f.errs[issueID]; err != nil {
+		return nil, err
+	}
+	issue, ok := f.issues[issueID]
+	if !ok {
+		return nil, beads.ErrNotFound
+	}
+	return issue, nil
+}
+
 func TestEffectivePolecatState(t *testing.T) {
 	tests := []struct {
 		name string
@@ -120,10 +136,11 @@ func TestEffectivePolecatState(t *testing.T) {
 
 func TestActiveMRBlocksReuse(t *testing.T) {
 	tests := []struct {
-		name string
-		mrID string
-		bd   reuseMRShower
-		want bool
+		name       string
+		mrID       string
+		sourceHint string
+		bd         reuseMRShower
+		want       bool
 	}{
 		{name: "empty active MR does not block"},
 		{
@@ -133,10 +150,17 @@ func TestActiveMRBlocksReuse(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "closed MR does not block reuse",
+			name:       "closed MR with terminal source does not block reuse",
+			mrID:       "mr-1",
+			sourceHint: "gt-closed",
+			bd:         fakeReuseMapShower{issues: map[string]*beads.Issue{"mr-1": &beads.Issue{ID: "mr-1", Status: "closed"}, "gt-closed": &beads.Issue{ID: "gt-closed", Status: "closed"}}},
+			want:       false,
+		},
+		{
+			name: "closed MR without source blocks conservatively",
 			mrID: "mr-1",
-			bd:   fakeReuseMRShower{issue: &beads.Issue{ID: "mr-1", Status: "closed"}},
-			want: false,
+			bd:   fakeReuseMapShower{issues: map[string]*beads.Issue{"mr-1": &beads.Issue{ID: "mr-1", Status: "closed"}}},
+			want: true,
 		},
 		{
 			name: "lookup error blocks conservatively",
@@ -145,16 +169,23 @@ func TestActiveMRBlocksReuse(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "missing MR blocks conservatively",
+			name: "missing MR blocks conservatively without source",
 			mrID: "mr-1",
 			bd:   fakeReuseMRShower{},
 			want: true,
+		},
+		{
+			name:       "missing MR with terminal source does not block reuse",
+			mrID:       "mr-1",
+			sourceHint: "gt-closed",
+			bd:         fakeReuseMapShower{issues: map[string]*beads.Issue{"gt-closed": &beads.Issue{ID: "gt-closed", Status: "closed"}}},
+			want:       false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := activeMRBlocksReuse(tt.bd, tt.mrID); got != tt.want {
+			if got := activeMRBlocksReuse(tt.bd, tt.mrID, tt.sourceHint); got != tt.want {
 				t.Fatalf("activeMRBlocksReuse() = %v, want %v", got, tt.want)
 			}
 		})

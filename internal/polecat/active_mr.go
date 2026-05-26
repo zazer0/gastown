@@ -15,10 +15,10 @@ type IssueReader interface {
 
 // ActiveMRInput describes the active merge-request context for a polecat.
 type ActiveMRInput struct {
-	ActiveMR         string
-	SourceIssueHint  string
-	RequireGitSafe   bool
-	GitSafe          bool
+	ActiveMR        string
+	SourceIssueHint string
+	RequireGitSafe  bool
+	GitSafe         bool
 }
 
 // ActiveMRAssessment is the shared active_mr classification used by recovery,
