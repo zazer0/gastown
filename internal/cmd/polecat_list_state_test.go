@@ -194,13 +194,14 @@ func TestActiveMRBlocksReuse(t *testing.T) {
 
 func TestPolecatReuseStatus(t *testing.T) {
 	tests := []struct {
-		name           string
-		state          polecat.State
-		cleanupStatus  string
-		activeMR       string
-		branch         string
-		activeMRBlocks bool
-		want           string
+		name             string
+		state            polecat.State
+		cleanupStatus    string
+		activeMR         string
+		branch           string
+		activeMRBlocks   bool
+		staleCleanupSafe bool
+		want             string
 	}{
 		{
 			name:  "working has no reuse status",
@@ -218,6 +219,13 @@ func TestPolecatReuseStatus(t *testing.T) {
 			state:         polecat.StateIdle,
 			cleanupStatus: string(polecat.CleanupUnpushed),
 			want:          "idle-recovery-needed",
+		},
+		{
+			name:             "idle stale dirty cleanup can be clean",
+			state:            polecat.StateIdle,
+			cleanupStatus:    string(polecat.CleanupUnpushed),
+			staleCleanupSafe: true,
+			want:             "idle-clean",
 		},
 		{
 			name:           "idle open MR is pr open",
@@ -245,7 +253,7 @@ func TestPolecatReuseStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := polecatReuseStatus(tt.state, tt.cleanupStatus, tt.activeMR, tt.branch, tt.activeMRBlocks)
+			got := polecatReuseStatus(tt.state, tt.cleanupStatus, tt.activeMR, tt.branch, tt.activeMRBlocks, tt.staleCleanupSafe)
 			if got != tt.want {
 				t.Fatalf("polecatReuseStatus() = %q, want %q", got, tt.want)
 			}

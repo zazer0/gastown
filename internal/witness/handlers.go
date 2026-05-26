@@ -221,12 +221,16 @@ func HandlePolecatDoneFromBead(bd *BdCli, workDir, rigName, polecatName string, 
 		result.Error = fmt.Errorf("nil agent fields for polecat %s", polecatName)
 		return result
 	}
+	sourceIssue := fields.HookBead
+	if sourceIssue == "" {
+		sourceIssue = fields.LastSourceIssue
+	}
 
 	// Map agent bead fields to the existing PolecatDonePayload for reuse
 	payload := &PolecatDonePayload{
 		PolecatName: polecatName,
 		Exit:        fields.ExitType,
-		IssueID:     fields.HookBead,
+		IssueID:     sourceIssue,
 		MRID:        fields.MRID,
 		Branch:      fields.Branch,
 		MRFailed:    fields.MRFailed,
@@ -1734,7 +1738,7 @@ func detectZombieDeadSession(bd *BdCli, workDir, townRoot, rigName, polecatName,
 		// refinery queue. Nuking would delete the remote branch before the refinery
 		// can merge it. The dead session is expected, not a zombie.
 		// gt-2gra: Use snapshot's ActiveMR instead of calling getAgentActiveMR.
-		if hasPendingMRFromSnapshot(bd, workDir, polecatName, snap) {
+		if hasPendingMRFromSnapshot(bd, workDir, rigName, polecatName, snap) {
 			return ZombieResult{}, false
 		}
 
@@ -2154,11 +2158,16 @@ func DiscoverCompletions(bd *BdCli, workDir, rigName string, router *mail.Router
 			continue // No completion metadata — skip
 		}
 
+		sourceIssue := fields.HookBead
+		if sourceIssue == "" {
+			sourceIssue = fields.LastSourceIssue
+		}
+
 		discovery := CompletionDiscovery{
 			PolecatName:    polecatName,
 			AgentBeadID:    agentBeadID,
 			ExitType:       fields.ExitType,
-			IssueID:        fields.HookBead,
+			IssueID:        sourceIssue,
 			MRID:           fields.MRID,
 			Branch:         fields.Branch,
 			MRFailed:       fields.MRFailed,
@@ -2170,7 +2179,7 @@ func DiscoverCompletions(bd *BdCli, workDir, rigName string, router *mail.Router
 		payload := &PolecatDonePayload{
 			PolecatName: polecatName,
 			Exit:        fields.ExitType,
-			IssueID:     fields.HookBead,
+			IssueID:     sourceIssue,
 			MRID:        fields.MRID,
 			Branch:      fields.Branch,
 			MRFailed:    fields.MRFailed,
@@ -3090,27 +3099,27 @@ func findAllCleanupWisps(bd *BdCli, workDir, polecatName string) []string {
 // Used to prevent zombie detection from nuking polecats whose MR is still being
 // processed by the refinery. Nuking would delete the remote branch and orphan the MR.
 // See: gt-6a9d
-func hasPendingMR(bd *BdCli, workDir, _, polecatName, agentBeadID string) bool {
+func hasPendingMR(bd *BdCli, workDir, rigName, polecatName, agentBeadID string) bool {
 	// Check 1: Cleanup wisp with merge-requested state (created by HandlePolecatDone)
 	wispID, _ := findCleanupWisp(bd, workDir, polecatName)
-	if wispID != "" {
-		return true
-	}
 
 	// Check 2: active_mr on agent bead (set by gt done when MR is created)
 	activeMR, sourceHint := getAgentMRContext(bd, workDir, agentBeadID)
-	assessment := polecat.AssessActiveMR(beadCLIShower{bd: bd, workDir: workDir}, polecat.ActiveMRInput{ActiveMR: activeMR, SourceIssueHint: sourceHint})
+	assessment := polecat.AssessActiveMR(beadCLIShower{bd: bd, workDir: workDir}, polecat.ActiveMRInput{ActiveMR: activeMR, SourceIssueHint: sourceHint, RequireGitSafe: true, GitSafe: activeMRGitSafe(workDir, rigName, polecatName)})
+	if activeMR != "" && !assessment.Pending {
+		return false
+	}
+	if wispID != "" {
+		return true
+	}
 	return assessment.Pending
 }
 
 // hasPendingMRFromSnapshot checks for a pending MR using a pre-fetched ActiveMR
 // value from the agent bead snapshot, avoiding a redundant bd show call. (gt-2gra)
-func hasPendingMRFromSnapshot(bd *BdCli, workDir, polecatName string, snap *agentBeadSnapshot) bool {
+func hasPendingMRFromSnapshot(bd *BdCli, workDir, rigName, polecatName string, snap *agentBeadSnapshot) bool {
 	// Check 1: Cleanup wisp with merge-requested state (created by HandlePolecatDone)
 	wispID, _ := findCleanupWisp(bd, workDir, polecatName)
-	if wispID != "" {
-		return true
-	}
 
 	// Check 2: active_mr from pre-fetched snapshot
 	activeMR := ""
@@ -3131,8 +3140,27 @@ func hasPendingMRFromSnapshot(bd *BdCli, workDir, polecatName string, snap *agen
 			}
 		}
 	}
-	assessment := polecat.AssessActiveMR(beadCLIShower{bd: bd, workDir: workDir}, polecat.ActiveMRInput{ActiveMR: activeMR, SourceIssueHint: sourceHint})
+	assessment := polecat.AssessActiveMR(beadCLIShower{bd: bd, workDir: workDir}, polecat.ActiveMRInput{ActiveMR: activeMR, SourceIssueHint: sourceHint, RequireGitSafe: true, GitSafe: activeMRGitSafe(workDir, rigName, polecatName)})
+	if activeMR != "" && !assessment.Pending {
+		return false
+	}
+	if wispID != "" {
+		return true
+	}
 	return assessment.Pending
+}
+
+func activeMRGitSafe(workDir, rigName, polecatName string) bool {
+	townRoot := workDirToTownRoot(workDir)
+	if townRoot == "" || rigName == "" || polecatName == "" {
+		return false
+	}
+	clonePath := filepath.Join(townRoot, rigName, "polecats", polecatName, rigName)
+	status, err := git.NewGit(clonePath).CheckUncommittedWork()
+	if err != nil {
+		return false
+	}
+	return status.CleanExcludingRuntime() && status.StashCount == 0 && status.UnpushedCommits == 0
 }
 
 // getAgentMRContext retrieves active_mr and durable source context from an agent bead.

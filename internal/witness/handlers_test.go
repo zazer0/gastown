@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -480,6 +481,21 @@ func fakeBd() (*BdCli, *mockBdCalls) {
 	)
 }
 
+func setupActiveMRGitSafeWorkDir(t *testing.T, rigName, polecatName string) string {
+	t.Helper()
+	townRoot := t.TempDir()
+	clonePath := filepath.Join(townRoot, rigName, "polecats", polecatName, rigName)
+	if err := os.MkdirAll(clonePath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "init")
+	cmd.Dir = clonePath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return townRoot
+}
+
 func TestHasPendingMRFromSnapshotAssessesMRStatus(t *testing.T) {
 	issueJSON := func(id, status, desc string) string {
 		b, err := json.Marshal([]map[string]any{{"id": id, "status": status, "description": desc}})
@@ -538,6 +554,7 @@ func TestHasPendingMRFromSnapshotAssessesMRStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			workDir := setupActiveMRGitSafeWorkDir(t, "gastown", "nux")
 			bd, _ := mockBd(
 				func(args []string) (string, error) {
 					if len(args) == 0 {
@@ -554,7 +571,7 @@ func TestHasPendingMRFromSnapshotAssessesMRStatus(t *testing.T) {
 				func(args []string) error { return nil },
 			)
 			snap := &agentBeadSnapshot{ActiveMR: "gt-mr", Fields: &beads.AgentFields{ActiveMR: "gt-mr", LastSourceIssue: "gt-src"}}
-			if got := hasPendingMRFromSnapshot(bd, t.TempDir(), "nux", snap); got != tt.want {
+			if got := hasPendingMRFromSnapshot(bd, workDir, "gastown", "nux", snap); got != tt.want {
 				t.Fatalf("hasPendingMRFromSnapshot() = %v, want %v", got, tt.want)
 			}
 		})
@@ -562,6 +579,7 @@ func TestHasPendingMRFromSnapshotAssessesMRStatus(t *testing.T) {
 }
 
 func TestHasPendingMRUsesAgentLastSourceIssue(t *testing.T) {
+	workDir := setupActiveMRGitSafeWorkDir(t, "gastown", "nux")
 	bd, _ := mockBd(
 		func(args []string) (string, error) {
 			if len(args) == 0 {
@@ -585,7 +603,7 @@ func TestHasPendingMRUsesAgentLastSourceIssue(t *testing.T) {
 		func(args []string) error { return nil },
 	)
 
-	if got := hasPendingMR(bd, t.TempDir(), "gastown", "nux", "gt-agent"); got {
+	if got := hasPendingMR(bd, workDir, "gastown", "nux", "gt-agent"); got {
 		t.Fatalf("hasPendingMR() = true, want false for missing MR with terminal source")
 	}
 }

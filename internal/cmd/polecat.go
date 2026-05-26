@@ -425,13 +425,18 @@ func activeMRBlocksReuse(bd reuseMRShower, mrID, sourceHint string) bool {
 	return assessment.Pending
 }
 
-func polecatReuseStatus(state polecat.State, cleanupStatus, activeMR, branch string, activeMRBlocks bool) string {
+func polecatReuseStatus(state polecat.State, cleanupStatus, activeMR, branch string, activeMRBlocks, staleCleanupSafe bool) string {
 	if state != polecat.StateIdle {
 		return ""
 	}
 	status := polecat.CleanupStatus(cleanupStatus)
 	if cleanupStatus == "" || status == polecat.CleanupUnknown || status.RequiresRecovery() {
-		return "idle-recovery-needed"
+		if staleCleanupSafe {
+			// Continue to classify the slot; direct git/source checks proved this
+			// cleanup_status is stale and no longer represents work at risk.
+		} else {
+			return "idle-recovery-needed"
+		}
 	}
 	if activeMR != "" && activeMRBlocks {
 		return "idle-pr-open"
@@ -501,15 +506,24 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 			cleanupStatus := ""
 			activeMR := ""
 			sourceHint := p.Issue
+			hookBead := ""
 			agentBeadID := polecatBeadIDForRig(r, r.Name, p.Name)
-			if _, fields, err := bd.GetAgentBead(agentBeadID); err == nil && fields != nil {
+			if agentIssue, fields, err := bd.GetAgentBead(agentBeadID); err == nil && fields != nil {
 				cleanupStatus = fields.CleanupStatus
 				activeMR = fields.ActiveMR
+				hookBead = agentHookBead(agentIssue, fields)
 				if sourceHint == "" {
 					sourceHint = fields.LastSourceIssue
 				}
 				if sourceHint == "" {
 					sourceHint = fields.HookBead
+				}
+			}
+			activeMRBlocks := activeMRBlocksReuse(bd, activeMR, sourceHint)
+			staleCleanupSafe := false
+			if polecat.CleanupStatus(cleanupStatus) == polecat.CleanupUnpushed && !activeMRBlocks && hookBead == "" && isAssignedBeadTerminal(bd, sourceHint) {
+				if gitState, gitErr := getGitState(p.ClonePath); gitErr == nil && gitState != nil && gitState.Clean {
+					staleCleanupSafe = true
 				}
 			}
 			state := effectivePolecatState(PolecatListItem{
@@ -525,7 +539,7 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 				CleanupStatus:  cleanupStatus,
 				ActiveMR:       activeMR,
 				Branch:         p.Branch,
-				ReuseStatus:    polecatReuseStatus(state, cleanupStatus, activeMR, p.Branch, activeMRBlocksReuse(bd, activeMR, sourceHint)),
+				ReuseStatus:    polecatReuseStatus(state, cleanupStatus, activeMR, p.Branch, activeMRBlocks, staleCleanupSafe),
 				SessionRunning: running,
 			})
 			knownNames[p.Name] = true

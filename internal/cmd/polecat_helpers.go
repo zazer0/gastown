@@ -129,20 +129,51 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 			}
 		}
 	} else {
+		currentIssue := ""
+		if infoErr == nil && polecatInfo != nil {
+			currentIssue = polecatInfo.Issue
+		}
+		sourceHint := agentSourceIssueHint(currentIssue, fields)
+		hookBead := agentHookBead(agentIssue, fields)
+		var gitState *GitState
+		var gitErr error
+		gitStateLoaded := false
+		loadGitState := func() {
+			if gitStateLoaded || infoErr != nil || polecatInfo == nil {
+				return
+			}
+			gitState, gitErr = getGitState(polecatInfo.ClonePath)
+			result.GitState = gitState
+			gitStateLoaded = true
+		}
+		activeMRAssessment := polecat.ActiveMRAssessment{}
+		if fields.ActiveMR != "" {
+			loadGitState()
+			gitSafe := gitErr == nil && gitState != nil && gitState.Clean
+			activeMRAssessment = polecat.AssessActiveMR(bd, polecat.ActiveMRInput{ActiveMR: fields.ActiveMR, SourceIssueHint: sourceHint, RequireGitSafe: true, GitSafe: gitSafe})
+		}
+		beadTerminal := isAssignedBeadTerminal(bd, sourceHint)
+		if activeMRAssessment.SourceTerminal {
+			beadTerminal = true
+		}
+
 		// Check cleanup_status from agent bead
 		result.CleanupStatus = polecat.CleanupStatus(fields.CleanupStatus)
 		switch result.CleanupStatus {
 		case polecat.CleanupClean:
 			// OK
 		default:
-			result.Reasons = append(result.Reasons, cleanupStatusBlocker(result.CleanupStatus))
+			if result.CleanupStatus == polecat.CleanupUnpushed {
+				loadGitState()
+			}
+			if staleCleanupStatusCanBeIgnoredForRecovery(result.CleanupStatus, beadTerminal, hookBead, activeMRAssessment.Pending, gitState, gitErr) {
+				// OK: stale self-report after terminal source and direct clean git.
+			} else {
+				result.Reasons = append(result.Reasons, cleanupStatusBlocker(result.CleanupStatus))
+			}
 		}
 
 		// Check 3: Work on hook
-		hookBead := agentIssue.HookBead
-		if hookBead == "" {
-			hookBead = fields.HookBead
-		}
 		if hookBead != "" {
 			result.HookBead = hookBead
 			// Check if hooked bead is still active (not closed)
@@ -160,7 +191,7 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 
 		if fields.ActiveMR != "" {
 			result.ActiveMR = fields.ActiveMR
-			if blocker := activeMRBlocker(bd, fields.ActiveMR, agentSourceIssueHint("", fields), false, false); blocker != "" {
+			if blocker := activeMRAssessment.Reason; activeMRAssessment.Pending && blocker != "" {
 				result.Reasons = append(result.Reasons, blocker)
 			}
 		}
@@ -275,7 +306,13 @@ func displayDryRunSafetyCheck(target polecatTarget) bool {
 		}
 
 		if fields.ActiveMR != "" {
-			if blocker := activeMRBlocker(bd, fields.ActiveMR, agentSourceIssueHint("", fields), false, false); blocker != "" {
+			sourceHint := agentSourceIssueHint("", fields)
+			gitSafe := false
+			if infoErr == nil && polecatInfo != nil {
+				gitState, gitErr := getGitState(polecatInfo.ClonePath)
+				gitSafe = gitErr == nil && gitState != nil && gitState.Clean
+			}
+			if blocker := activeMRBlocker(bd, fields.ActiveMR, sourceHint, true, gitSafe); blocker != "" {
 				fmt.Printf("    - Active MR: %s (%s)\n", style.Error.Render("blocked"), blocker)
 			} else {
 				fmt.Printf("    - Active MR: %s (%s)\n", style.Success.Render("terminal"), fields.ActiveMR)
