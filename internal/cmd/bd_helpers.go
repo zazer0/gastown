@@ -217,6 +217,16 @@ func (b *bdCmd) wrapTimeout(err error, deadline time.Duration) error {
 	return err
 }
 
+func (b *bdCmd) wrapCommandError(ctx context.Context, err error, deadline time.Duration) error {
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("%s timed out after %v: %w", b.argsDesc(), deadline, err)
+	}
+	return b.wrapTimeout(err, deadline)
+}
+
 func (b *bdCmd) argsDesc() string {
 	desc := "bd"
 	if len(b.args) > 0 {
@@ -261,7 +271,7 @@ func (b *bdCmd) Run() error {
 	deadline := resolveBdCmdTimeout()
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
-	return b.wrapTimeout(b.buildContextCommand(ctx).Run(), deadline)
+	return b.wrapCommandError(ctx, b.buildContextCommand(ctx).Run(), deadline)
 }
 
 // Output builds and runs the command, returning stdout and any error.
@@ -273,7 +283,7 @@ func (b *bdCmd) Output() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
 	out, err := b.buildContextCommand(ctx).Output()
-	return out, b.wrapTimeout(err, deadline)
+	return out, b.wrapCommandError(ctx, err, deadline)
 }
 
 // CombinedOutput builds and runs the command, returning combined stdout+stderr.
@@ -289,5 +299,5 @@ func (b *bdCmd) CombinedOutput() ([]byte, error) {
 	cmd.Dir = b.dir
 	cmd.Env = b.buildEnv()
 	out, err := cmd.CombinedOutput()
-	return out, b.wrapTimeout(err, deadline)
+	return out, b.wrapCommandError(ctx, err, deadline)
 }
