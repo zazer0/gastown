@@ -1661,7 +1661,12 @@ func normalizeBugTitle(title string) string {
 }
 
 // Update updates an existing issue.
+// Routes to the correct rig database based on the bead ID prefix.
 func (b *Beads) Update(id string, opts UpdateOptions) error {
+	if target := b.forIssueID(id); target != b {
+		return target.Update(id, opts)
+	}
+
 	if b.store != nil {
 		return b.storeUpdate(id, opts)
 	}
@@ -1704,9 +1709,14 @@ func (b *Beads) Update(id string, opts UpdateOptions) error {
 // Close closes one or more issues.
 // If a runtime session ID is set in the environment, it is passed to bd close
 // for work attribution tracking (see decision 009-session-events-architecture.md).
+// Routes to the correct rig database based on the first bead ID's prefix.
 func (b *Beads) Close(ids ...string) error {
 	if len(ids) == 0 {
 		return nil
+	}
+
+	if target := b.forIssueID(ids[0]); target != b {
+		return target.Close(ids...)
 	}
 
 	if b.store != nil {
@@ -1727,9 +1737,14 @@ func (b *Beads) Close(ids ...string) error {
 // CloseWithReason closes one or more issues with a reason.
 // If a runtime session ID is set in the environment, it is passed to bd close
 // for work attribution tracking (see decision 009-session-events-architecture.md).
+// Routes to the correct rig database based on the first bead ID's prefix.
 func (b *Beads) CloseWithReason(reason string, ids ...string) error {
 	if len(ids) == 0 {
 		return nil
+	}
+
+	if target := b.forIssueID(ids[0]); target != b {
+		return target.CloseWithReason(reason, ids...)
 	}
 
 	if b.store != nil {
@@ -1751,9 +1766,14 @@ func (b *Beads) CloseWithReason(reason string, ids ...string) error {
 // ForceCloseWithReason closes one or more issues with --force, bypassing
 // dependency checks. Used by gt done where the polecat is about to be nuked
 // and open molecule wisps should not block issue closure.
+// Routes to the correct rig database based on the first bead ID's prefix.
 func (b *Beads) ForceCloseWithReason(reason string, ids ...string) error {
 	if len(ids) == 0 {
 		return nil
+	}
+
+	if target := b.forIssueID(ids[0]); target != b {
+		return target.ForceCloseWithReason(reason, ids...)
 	}
 
 	// In-process store close doesn't enforce dependency checks (no --force
@@ -1786,7 +1806,12 @@ func (b *Beads) Release(id string) error {
 
 // ReleaseWithReason moves an in_progress issue back to open status with a reason.
 // The reason is added as a note to the issue for tracking purposes.
+// Routes to the correct rig database based on the bead ID prefix.
 func (b *Beads) ReleaseWithReason(id, reason string) error {
+	if target := b.forIssueID(id); target != b {
+		return target.ReleaseWithReason(id, reason)
+	}
+
 	if b.store != nil {
 		updates := map[string]interface{}{
 			"status":   "open",
@@ -1812,7 +1837,12 @@ func (b *Beads) ReleaseWithReason(id, reason string) error {
 }
 
 // AddDependency adds a dependency: issue depends on dependsOn.
+// Routes to the correct rig database based on the issue's prefix.
 func (b *Beads) AddDependency(issue, dependsOn string) error {
+	if target := b.forIssueID(issue); target != b {
+		return target.AddDependency(issue, dependsOn)
+	}
+
 	if b.store != nil {
 		return b.storeAddDependency(issue, dependsOn)
 	}
@@ -1822,7 +1852,12 @@ func (b *Beads) AddDependency(issue, dependsOn string) error {
 }
 
 // RemoveDependency removes a dependency.
+// Routes to the correct rig database based on the issue's prefix.
 func (b *Beads) RemoveDependency(issue, dependsOn string) error {
+	if target := b.forIssueID(issue); target != b {
+		return target.RemoveDependency(issue, dependsOn)
+	}
+
 	if b.store != nil {
 		return b.storeRemoveDependency(issue, dependsOn)
 	}
